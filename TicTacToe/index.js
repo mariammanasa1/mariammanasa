@@ -1,8 +1,7 @@
 import express from "express";
 const app = express();
-import cors from "cors"; // CORS is a node.js package for providing a Connect/Express middleware that can be used to enable CORS with various options.
+import cors from "cors";
 import Player from './models/player.js';
-import Move from './models/int.js';
 import { syncModels } from "./models/index.js";
 import OpenAI from "openai";
 
@@ -15,52 +14,58 @@ app.use(express.json());
 // Initialize models
 syncModels();
 
-// OpenAI setup
-const OPENAI_API_KEY = "key here";
+// OpenAI setup - Replace "YOUR_OPENAI_API_KEY_HERE" with your actual API key
+const OPENAI_API_KEY = "KEY HERE";
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const aiModel = "gpt-4-turbo-preview";
 
 // Game API endpoint
 app.get("/api/game", async (req, res) => {
-  // insert openai key here
-  const OPENAI_API_KEY="insert openai key here";
-  const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-  const aiModel = "gpt-4-turbo-preview";
   const boardJson = req.query.board;
 
-  if (boardJson && boardJson.length) {
-    const prompt = [];
-    prompt.push('You are an expert tic tac toe player that only moves when its your turn, making only one move at a time.')
-    prompt.push('You play as O. focus on winning, play extremely well.')
-    prompt.push('For the json content I provide as input, please give me json output in the same format.');
-    prompt.push('{board:[[],[],[]]}')
+  if (!boardJson || !boardJson.length) {
+    return res.status(400).json({ error: "Missing or invalid board input." });
+  }
 
-    const messages = [
-      {
-        role: "system",
-        content: prompt.join(" "),
-      },
-      {
-        role: "user",
-        content: boardJson,
-      },
-    ];
+  const prompt = [];
+  prompt.push('You are an expert tic tac toe player that only moves when its your turn, making only one move at a time.');
+  prompt.push('You play as O. Focus on winning, play extremely well.');
+  prompt.push('For the JSON content I provide as input, please give me JSON output in the same format.');
+  prompt.push('{board:[[],[],[]]}');
 
-    try {
-      const completion = await openai.chat.completions.create({
-        model: aiModel,
-        messages,
-        response_format: { type: "json_object" },
-      });
+  const messages = [
+    {
+      role: "system",
+      content: prompt.join(" "),
+    },
+    {
+      role: "user",
+      content: boardJson,
+    },
+  ];
 
-      const aiResponse = completion.choices[0].message.content;
-      res.json({ aiResponse });
-    } catch (error) {
-      console.error("OpenAI API error:", error);
-      res.status(500).json({ error: "Failed to generate AI move." });
-    }
-  } else {
-    res.status(400).json({ error: "Missing or invalid board input." });
+  try {
+    // Log request to help with debugging
+    console.log("Sending request to OpenAI with board:", boardJson);
+    
+    const completion = await openai.chat.completions.create({
+      model: aiModel,
+      messages,
+      response_format: { type: "json_object" },
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    
+    // Log AI response for debugging
+    console.log("Received AI response:", aiResponse);
+    
+    res.json({ aiResponse });
+  } catch (error) {
+    console.error("OpenAI API error:", error);
+    res.status(500).json({ 
+      error: "Failed to generate AI move.",
+      details: error.message
+    });
   }
 });
 
@@ -101,7 +106,34 @@ app.get("/api/player/:name", async (req, res) => {
   }
 });
 
-// POST endpoint to create or update player statistics
+// POST endpoint to create a new player
+app.post("/api/player/create", async (req, res) => {
+  try {
+    const { playerName } = req.body;
+    
+    if (!playerName) {
+      return res.status(400).json({ error: "Player name is required" });
+    }
+    
+    // Find or create the player
+    const [player, created] = await Player.findOrCreate({
+      where: { player_id: playerName },
+      defaults: {
+        total_wins: 0,
+        total_losses: 0,
+        total_ties: 0,
+        total_games: 0
+      }
+    });
+    
+    return res.json(player);
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ error: "Failed to create player." });
+  }
+});
+
+// POST endpoint to update player statistics
 app.post("/api/player/update", async (req, res) => {
   try {
     const { playerName, result } = req.body;
@@ -196,4 +228,5 @@ app.post("/api/int", async (req, res) => {
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+  console.log(`API endpoint for AI moves: http://localhost:${PORT}/api/game`);
 });
